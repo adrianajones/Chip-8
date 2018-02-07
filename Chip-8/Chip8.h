@@ -1,6 +1,9 @@
 #pragma once
 #include <stack>
 #include <map>
+#include <sstream>
+#include <ios>
+#include <iomanip>
 
 #define CHIP_8_MEMORY_SIZE 4096
 #define INTERPRETER_SIZE 512
@@ -19,6 +22,7 @@ public:
 	unsigned short GetProgramSize();
 	void Reset();
 	int ExecuteNextInstruction();
+	int DecodeInstructionAt(unsigned short programCounter, std::wostringstream& description);
 	void KeyPress(char key);
 	unsigned long long GetDisplayRow(unsigned char row);
 	~Chip8();
@@ -42,19 +46,22 @@ private:
 	std::stack<unsigned short> m_stack;
 	std::map<char,int> m_validKeys;
 	unsigned char m_keyPressed;
+	std::wostringstream  m_scratch; 
 
 	// The Chip-8 display is 64x32 pixels. Store as 32 colums of 64 bits (8 bytes)
 	unsigned long long m_graphicsDisplay[DISPLAY_HEIGHT];
 
+	int DecodeExecute(unsigned short& programCounter, bool decodeOnly, std::wostringstream& description);
 	void ClearDisplay();
 	void ProcessRegisterSet(unsigned char registerNum, unsigned char value);
 	void ProcessRegisterAddition(unsigned char registerNum, unsigned char value);
-	int ProcessBitRegisterOperation(unsigned char firstRegister, unsigned char secondRegister, unsigned char opSubType);
+	int ProcessBitRegisterOperation(unsigned char firstRegister, unsigned char secondRegister, unsigned char opSubType, std::wostringstream& description, bool decodeOnly);
 	void ProcessAddressRegisterSet(unsigned short address);
 	void ProcessDisplay(unsigned char firstRegister, unsigned char secondRegister, unsigned char height);
-	int ProcessMemoryOperation(unsigned char registerNum, unsigned char constValue);
+	int ProcessMemoryOperation(unsigned char registerNum, unsigned char constValue, std::wostringstream& description, bool decodeOnly);
 	void ProcessFontOperation(unsigned char registerNum);	
 	void ProcessBCDOperation(unsigned char registerNum);
+	int ProcessFillFromRegisters(unsigned char registerNum);
 	int ProcessFillRegisters(unsigned char registerNum);
 	void ProcessRandom(unsigned char registerNum, unsigned char constValue);
 };

@@ -127,8 +127,19 @@ unsigned short Chip8::GetProgramSize()
 
 int Chip8::ExecuteNextInstruction()
 {
+	return DecodeExecute(m_pc, false, m_scratch);
+}
+
+int Chip8::DecodeInstructionAt(unsigned short programCounter, std::wostringstream& description)
+{
+	unsigned short temp = programCounter;
+	return DecodeExecute(temp, true, description);
+}
+
+int Chip8::DecodeExecute(unsigned short& programCounter, bool decodeOnly, std::wostringstream& description)
+{
 	int returnValue = 0;
-	unsigned short opcode = GetOpcode(m_pc);
+	unsigned short opcode = GetOpcode(programCounter);
 	unsigned char  operationType = (opcode & 0xF000) >> 12;
 	// After the first nibble, the rest depends on the operation type, but get all possible combinations so we don't have to do them later
 	unsigned char firstRegister = (opcode & 0x0F00) >> 8;
@@ -145,6 +156,8 @@ int Chip8::ExecuteNextInstruction()
 	else
 		returnValue |= 0x4;
 
+	description << "0x" << std::uppercase << std::setfill(L'0') << std::setw(4) << std::hex <<  programCounter
+		        <<  ": 0x" << std::uppercase << std::setfill(L'0') << std::setw(4) << std::hex << opcode << "     ";
 	switch (operationType)
 	{
 		case 0x00:
@@ -157,11 +170,15 @@ int Chip8::ExecuteNextInstruction()
 			{
 				if (0 == opSubType)
 				{
+					description << "CLS";
+					if (decodeOnly) break;
 					ClearDisplay();
 				}
 				else if (0xE == opSubType)
 				{
-					m_pc = m_stack.top();
+					description << "RET";
+					if (decodeOnly) break;
+					programCounter = m_stack.top();
 					m_stack.pop();
 					flowControl = true;
 				}
@@ -172,17 +189,21 @@ int Chip8::ExecuteNextInstruction()
 			}
 			break;
 		case 0x1:
+			description << "JP   0x" << std::uppercase << std::setfill(L'0') << std::setw(4) << std::hex << address;
+			if (decodeOnly) break;
 			if ((address > START_CHIP_8_PROGRAM) && (address < (START_CHIP_8_PROGRAM + m_programSize)))
 			{
-				m_pc = address;
+				programCounter = address;
 				flowControl = true;
 			}
 			break;
 		case 0x02:
+			description << "CALL 0x" << std::uppercase << std::setfill(L'0') << std::setw(4) << std::hex << address;
+			if (decodeOnly) break;
 			if ((address > START_CHIP_8_PROGRAM) && (address < (START_CHIP_8_PROGRAM + m_programSize)))
 			{
-				m_stack.push(m_pc+2); // Move to the next instruction passed the subroutine call
-				m_pc = address;
+				m_stack.push(programCounter+2); // Move to the next instruction passed the subroutine call
+				programCounter = address;
 				flowControl = true;
 			}
 			else
@@ -191,53 +212,81 @@ int Chip8::ExecuteNextInstruction()
 			}
 			break;
 		case 0x03:
+			description << "SE   V" << std::uppercase << std::setw(1) << std::hex << firstRegister << ", " << std::setfill(L'0') << std::setw(4) << std::hex << constValue;
+			if (decodeOnly) break;
 			if (m_registers[firstRegister] == constValue)
 			{
-				m_pc += 2; // We'll add 2 more at the end of the case skipping the next instruction
+				programCounter += 2; // We'll add 2 more at the end of the case skipping the next instruction
 			}
 			break;
 		case 0x04:
+			description << "SNE  V" << std::uppercase << std::setw(1) << std::hex << firstRegister << ", " << std::setfill(L'0') << std::setw(4) << std::hex << constValue;
+			if (decodeOnly) break;
 			if (m_registers[firstRegister] != constValue)
 			{
-				m_pc += 2; // We'll add 2 more at the end of the case skipping the next instruction
+				programCounter += 2; // We'll add 2 more at the end of the case skipping the next instruction
 			}
 			break;
+		case 0x05:
+			if (opSubType != 0)
+			{
+				returnValue |= 0x1;
+				break;
+			}
+			description << "SE   V" << std::uppercase << std::setw(1) << std::hex << firstRegister << ", V" << std::setw(1) << std::hex << secondRegister << constValue;
+			if (decodeOnly) break;
+			if (m_registers[firstRegister] == m_registers[secondRegister])
+			{
+				programCounter += 2;
+			}
 		case 0x06:
+			description << "SE   V" << std::uppercase << std::setw(1) << std::hex << firstRegister << ", 0x" << std::setfill(L'0') << std::setw(2) << std::hex << constValue;
+			if (decodeOnly) break;
 			ProcessRegisterSet(firstRegister, constValue);
 			break;
 		case 0x07:
+			description << "ADD  V" << std::uppercase << std::setw(1) << std::hex << firstRegister << ", 0x" << std::setfill(L'0') << std::setw(2) << std::hex << constValue;
+			if (decodeOnly) break;
 			ProcessRegisterAddition(firstRegister, constValue);
 			break;
 		case 0x08:
-			returnValue |= ProcessBitRegisterOperation(firstRegister, secondRegister, opSubType);
+			returnValue |= ProcessBitRegisterOperation(firstRegister, secondRegister, opSubType, description, decodeOnly);
 			break;
 		case 0x0A:
+			description << "LD   I,0x" << std::uppercase << std::setfill(L'0') << std::setw(3) << std::hex << address;
+			if (decodeOnly) break;
 			ProcessAddressRegisterSet(address);
 			break;
 		case 0x0C:
+			description << "RND  V" << std::uppercase << std::setw(1) << std::hex << firstRegister << ", " << std::setfill(L'0') << std::setw(2) << std::hex << constValue;
+			if (decodeOnly) break;
 			ProcessRandom(firstRegister, constValue);
 			break;
 		case 0x0D:
+			description << "DRW  V" << std::uppercase << std::setw(1) << std::hex << firstRegister << ", V" << std::uppercase << std::setw(1) << std::hex << secondRegister
+				        << ", 0x" << std::setfill(L'0') << std::setw(2) << std::hex << opSubType;
+			if (decodeOnly) break;
 			ProcessDisplay(firstRegister, secondRegister, opSubType);
 			returnValue |= 0x2;
-			break;
-		case 0x0F:
-			returnValue = ProcessMemoryOperation(firstRegister, constValue);
 			break;
 		case 0x0E:
 			if (0x9E == constValue)
 			{
+				description << "SKP  V" << std::uppercase << std::setw(1) << std::hex << firstRegister;
+				if (decodeOnly) break;
 				if (m_keyPressed == m_registers[firstRegister])
 				{
-					m_pc += 2;
+					programCounter += 2;
 					m_keyPressed = 0xF0;
 				}
 			}
 			else if (0xA1 == constValue)
 			{
+				description << "SKNP V" << std::uppercase << std::setw(1) << std::hex << firstRegister;
+				if (decodeOnly) break;
 				if (m_keyPressed != m_registers[firstRegister])
 				{
-					m_pc += 2;
+					programCounter += 2;
 					m_keyPressed = 0xF0;
 				}
 			}
@@ -246,13 +295,16 @@ int Chip8::ExecuteNextInstruction()
 				returnValue |= 1;
 			}
 			break;
+		case 0x0F:
+			returnValue = ProcessMemoryOperation(firstRegister, constValue, description, decodeOnly);
+			break;
 		default:
 			// handle invalid operations later
 			returnValue |= 0x1;
 			break;
 	}
 	
-	if (!flowControl) m_pc += 2;
+	if (!flowControl) programCounter += 2;
 	if (returnValue & 0x1)
 		m_registers[0] = 13;
 	return returnValue;
@@ -268,25 +320,35 @@ void Chip8::ProcessRegisterAddition(unsigned char registerNum, unsigned char val
 	m_registers[registerNum] = m_registers[registerNum] + value;
 }
 
-int Chip8::ProcessBitRegisterOperation(unsigned char firstRegister, unsigned char secondRegister, unsigned char opSubType)
+int Chip8::ProcessBitRegisterOperation(unsigned char firstRegister, unsigned char secondRegister, unsigned char opSubType, std::wostringstream& description, bool decodeOnly)
 {
 	int returnValue = 0;
 	switch(opSubType)
 	{
 		case 0x00:
+			description << "LD   ";
+			if (decodeOnly) break;
 			m_registers[firstRegister] = m_registers[secondRegister];
 			break;
 		case 0x01:
+			description << "OR   ";
+			if (decodeOnly) break;
 			m_registers[firstRegister] |= m_registers[secondRegister];
 			break;
 		case 0x02:
+			description << "AND  ";
+			if (decodeOnly) break;
 			m_registers[firstRegister] &= m_registers[secondRegister];
 			break;
 		case 0x03:
+			description << "XOR  ";
+			if (decodeOnly) break;
 			m_registers[firstRegister] ^= m_registers[secondRegister];
 			break;
 		case 0x04:
 		{
+			description << "ADD  ";
+			if (decodeOnly) break;
 			unsigned short value = (unsigned short)m_registers[firstRegister] + m_registers[secondRegister];
 			if (value > 0xFF)
 				m_registers[15] = 1;
@@ -296,6 +358,8 @@ int Chip8::ProcessBitRegisterOperation(unsigned char firstRegister, unsigned cha
 		}
 			break;
 		case 0x05:
+			description << "SUB  ";
+			if (decodeOnly) break;
 			if (m_registers[secondRegister] > m_registers[firstRegister])
 				m_registers[15] = 0;
 			else
@@ -303,11 +367,15 @@ int Chip8::ProcessBitRegisterOperation(unsigned char firstRegister, unsigned cha
 			m_registers[firstRegister] -= m_registers[secondRegister];
 			break;
 		case 0x06:
+			description << "SHR  ";
+			if (decodeOnly) break;
 			m_registers[15] = m_registers[secondRegister] & 0x01;
 			m_registers[secondRegister] >>= 1;
 			m_registers[firstRegister] = m_registers[secondRegister];
 			break;
 		case 0x07:
+			description << "SUBN ";
+			if (decodeOnly) break;
 			if (m_registers[firstRegister] > m_registers[secondRegister])
 				m_registers[15] = 0;
 			else
@@ -315,6 +383,8 @@ int Chip8::ProcessBitRegisterOperation(unsigned char firstRegister, unsigned cha
 			m_registers[firstRegister] = m_registers[secondRegister] - m_registers[firstRegister];
 			break;
 		case 0x0E:
+			description << "SHL  ";
+			if (decodeOnly) break;
 			m_registers[15] = m_registers[secondRegister] & 0x80 >> 15;
 			m_registers[secondRegister] <<= 1;
 			m_registers[firstRegister] = m_registers[secondRegister];
@@ -323,6 +393,7 @@ int Chip8::ProcessBitRegisterOperation(unsigned char firstRegister, unsigned cha
 			returnValue = 0x01;
 			break;
 	}
+	description << "V" << std::uppercase << std::setw(1) << std::hex << firstRegister << ", V" << std::uppercase << std::setw(1) << std::hex << secondRegister;
 	return returnValue;
 }
 
@@ -386,27 +457,44 @@ unsigned long long Chip8::GetDisplayRow(unsigned char row)
 		return 0;
 }
 
-int Chip8::ProcessMemoryOperation(unsigned char registerNum, unsigned char constValue)
+int Chip8::ProcessMemoryOperation(unsigned char registerNum, unsigned char constValue, std::wostringstream& description, bool decodeOnly)
 {
 	int returnValue = 0;
 	switch (constValue)
 	{
 		case 0x07:
+			description << "LD   V" << std::uppercase << std::setw(1) << std::hex << registerNum << ", DT";
+			if (decodeOnly) break;
 			m_registers[registerNum] = m_delayTimer;
 			break;
 		case 0x15:
+			description << "LD   DT, V" << std::uppercase << std::setw(1) << std::hex << registerNum;
+			if (decodeOnly) break;
 			m_delayTimer = m_registers[registerNum];
 			break;
 		case 0x18:
+			description << "LD   ST, V" << std::uppercase << std::setw(1) << std::hex << registerNum;
+			if (decodeOnly) break;
 			m_sleepTimer = m_registers[registerNum];
 			break;
 		case 0x29:
+			description << "LD   F, V" << std::uppercase << std::setw(1) << std::hex << registerNum;
+			if (decodeOnly) break;
 			ProcessFontOperation(registerNum);
 			break;
 		case 0x33:
+			description << "LD   B, V" << std::uppercase << std::setw(1) << std::hex << registerNum;
+			if (decodeOnly) break;
 			ProcessBCDOperation(registerNum);
 			break;
+		case 0x55:
+			description << "LD   [I], V" << std::uppercase << std::setw(1) << std::hex << registerNum;
+			if (decodeOnly) break;
+			returnValue = ProcessFillFromRegisters(registerNum);
+			break;
 		case 0x65:
+			description << "LD   V" << std::uppercase << std::setw(1) << std::hex << registerNum << ", [I]";
+			if (decodeOnly) break;
 			returnValue = ProcessFillRegisters(registerNum);
 			break;
 		default:
@@ -428,6 +516,19 @@ void Chip8::ProcessBCDOperation(unsigned char registerNum)
 	m_memory[m_addressRegister] = value / 100;
 	m_memory[m_addressRegister+1] = (value / 10) % 10;
 	m_memory[m_addressRegister+2] = (value % 100) % 10;
+}
+
+int Chip8::ProcessFillFromRegisters(unsigned char registerNum)
+{
+	if ((m_addressRegister + registerNum) >= CHIP_8_MEMORY_SIZE)
+		return 0x1;
+
+	for (int x = 0; x <= registerNum; x++)
+	{
+		 m_memory[m_addressRegister++] = m_registers[x];
+	}
+
+	return 0;
 }
 
 int Chip8::ProcessFillRegisters(unsigned char registerNum)
