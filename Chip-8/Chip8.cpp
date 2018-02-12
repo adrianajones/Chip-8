@@ -23,7 +23,8 @@ Chip8::Chip8() :
 					{'X', 0x0},
 					{'C', 0xB},
 					{'V', 0xF } }),
-	m_keyPressed(0xF0) // Only the range 0x0 to 0xF is valid so set to some arbitrary invalid number
+	m_keyPressed(0xF0), // Only the range 0x0 to 0xF is valid so set to some arbitrary invalid number
+	m_executionState(STATE_INIT)
 
 {
 	m_memory = new unsigned char[CHIP_8_MEMORY_SIZE];
@@ -152,9 +153,7 @@ int Chip8::DecodeExecute(unsigned short& programCounter, bool decodeOnly, std::w
 	if (0 != m_delayTimer)
 		m_delayTimer--;
 	if (0 != m_sleepTimer)
-		m_sleepTimer--;
-	else
-		returnValue |= 0x4;
+		if (0 == --m_sleepTimer) returnValue |= 0x4;
 
 	description << "0x" << std::uppercase << std::setfill(L'0') << std::setw(4) << std::hex <<  programCounter
 		        <<  ": 0x" << std::uppercase << std::setfill(L'0') << std::setw(4) << std::hex << opcode << "     ";
@@ -467,6 +466,13 @@ int Chip8::ProcessMemoryOperation(unsigned char registerNum, unsigned char const
 			if (decodeOnly) break;
 			m_registers[registerNum] = m_delayTimer;
 			break;
+		case 0x0A:
+			description << "LD   V" << std::uppercase << std::setw(1) << std::hex << registerNum << ", K";
+			if (decodeOnly) break;
+			m_previousExecutionState = m_executionState;
+			m_executionState = STATE_PAUSED_FOR_INPUT;
+			m_registerToStoreKeyPress = registerNum;
+			break;
 		case 0x15:
 			description << "LD   DT, V" << std::uppercase << std::setw(1) << std::hex << registerNum;
 			if (decodeOnly) break;
@@ -570,5 +576,36 @@ void Chip8::KeyPress(char key)
 	if (it != m_validKeys.end())
 	{
 		m_keyPressed = it->second;
+		if (STATE_PAUSED_FOR_INPUT == m_executionState)
+		{
+			m_registers[m_registerToStoreKeyPress] = m_keyPressed;
+			m_keyPressed = 0xF0;
+			m_executionState = m_previousExecutionState;
+		}
 	}
+}
+
+unsigned short Chip8::GetPC()
+{
+	return m_pc;
+}
+
+bool Chip8::IsInit()
+{
+	return (m_executionState == STATE_INIT);
+}
+
+bool Chip8::IsPaused()
+{
+	// Anything other than executing is a paused state, including init
+	return (m_executionState != STATE_EXECUTING);
+}
+
+void Chip8::Pause()
+{
+	m_executionState = STATE_PAUSED;
+}
+void Chip8::Executing()
+{
+	m_executionState = STATE_EXECUTING;
 }

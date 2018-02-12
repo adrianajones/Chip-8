@@ -25,6 +25,11 @@ public:
 	int DecodeInstructionAt(unsigned short programCounter, std::wostringstream& description);
 	void KeyPress(char key);
 	unsigned long long GetDisplayRow(unsigned char row);
+	unsigned short GetPC();
+	bool IsPaused();
+	bool IsInit();
+	void Pause();
+	void Executing();
 	~Chip8();
 private:
 	Chip8();
@@ -33,6 +38,11 @@ private:
 	static constexpr int FONT_WIDTH = 4;
 	static constexpr int NUMBER_OF_FONTS = 16;
 	static constexpr int DISPLAY_HEIGHT = 32;
+
+	static constexpr int STATE_INIT   = 0x1;
+	static constexpr int STATE_PAUSED = 0x2;
+	static constexpr int STATE_PAUSED_FOR_INPUT = 0x3;
+	static constexpr int STATE_EXECUTING = 0x4;
 
 	unsigned char *m_memory;
 	int m_programSize;
@@ -47,6 +57,9 @@ private:
 	std::map<char,int> m_validKeys;
 	unsigned char m_keyPressed;
 	std::wostringstream  m_scratch; 
+	int m_executionState;
+	int m_previousExecutionState;
+	unsigned char m_registerToStoreKeyPress;
 
 	// The Chip-8 display is 64x32 pixels. Store as 32 colums of 64 bits (8 bytes)
 	unsigned long long m_graphicsDisplay[DISPLAY_HEIGHT];
